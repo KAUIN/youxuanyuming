@@ -8,7 +8,14 @@ headers = {
     'User-Agent': 'Mozilla/5.0 ...'  # 保留你的原有User-Agent
 }
 
-urls = [...]  # 你的URL列表
+# 首先，更新你的urls列表
+urls = [
+    'https://ip.164746.xyz/ipTop10.html',
+    'https://cf.090227.xyz/ct?ips=6',  # 修改为新的、具体的API地址
+    'https://api.uouin.com/cloudflare.html',
+    'https://www.wetest.vip/page/cloudflare/address_v4.html',
+    'https://stock.hostmonit.com/CloudFlareYes'
+]
 
 ip_pattern = r'\b(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b'
 
@@ -31,8 +38,16 @@ for url in urls:
         if url == 'https://ip.164746.xyz/ipTop10.html':
             ip_list = response.text.strip().split(',')
             found_ips = [ip.strip() for ip in ip_list if re.fullmatch(ip_pattern, ip.strip())]
-        elif url == 'https://cf.090227.xyz':
-            elements = soup.find_all('tr')
+        elif url == 'https://cf.090227.xyz/ct?ips=6':
+            # 新格式解析：按行分割，然后提取每行中“#”号前的IP
+            lines = response.text.strip().split('\n')
+            found_ips = []
+            for line in lines:
+            # 分割每行，取“#”前面的部分，并去除空格
+            ip_part = line.split('#')[0].strip()
+            # 用正则验证它是否是一个合法的IP地址（安全过滤）
+        if re.fullmatch(ip_pattern, ip_part):
+            found_ips.append(ip_part)
         elif url == 'https://api.uouin.com/cloudflare.html':
             elements = soup.find_all('div', class_='ip')
         elif url == 'https://www.wetest.vip/page/cloudflare/address_v4.html':
