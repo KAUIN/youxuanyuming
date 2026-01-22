@@ -46,8 +46,8 @@ for url in urls:
             # 分割每行，取“#”前面的部分，并去除空格
             ip_part = line.split('#')[0].strip()
             # 用正则验证它是否是一个合法的IP地址（安全过滤）
-        if re.fullmatch(ip_pattern, ip_part):
-            found_ips.append(ip_part)
+            if re.fullmatch(ip_pattern, ip_part):
+                found_ips.append(ip_part)
         elif url == 'https://api.uouin.com/cloudflare.html':
             elements = soup.find_all('div', class_='ip')
         elif url == 'https://www.wetest.vip/page/cloudflare/address_v4.html':
