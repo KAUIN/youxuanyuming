@@ -29,7 +29,8 @@ for url in urls:
 
         # --- 策略1：针对不同网站的原有精细规则 ---
         if url == 'https://ip.164746.xyz/ipTop10.html':
-            elements = soup.find_all('tr')
+            ip_list = response.text.strip().split(',')
+            found_ips = [ip.strip() for ip in ip_list if re.fullmatch(ip_pattern, ip.strip())]
         elif url == 'https://cf.090227.xyz':
             elements = soup.find_all('tr')
         elif url == 'https://api.uouin.com/cloudflare.html':
