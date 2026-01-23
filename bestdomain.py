@@ -130,7 +130,6 @@ if __name__ == "__main__":
     
     # 配置映射关系
     subdomain_source_mapping = {
-        'bestcf': 'ip.txt',  # 从本地文件读取
         'api': 'https://raw.githubusercontent.com/KAUIN/youxuanyuming/refs/heads/main/ip.txt',  # 从URL读取
         # 可以添加更多子域名映射
         # 'cdn': 'ip.txt',  # 另一个子域名也从本地文件读取
