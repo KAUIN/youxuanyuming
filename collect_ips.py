@@ -20,6 +20,7 @@ class IPScraper:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         })
         self.ip_set = set()  # 使用集合避免重复IP
+        self.domain_set = set()  # 使用集合避免重复域名
         
     def scrape_ip_164746_xyz(self, url: str) -> Set[str]:
         """爬取第一个网站的IP信息"""
@@ -187,6 +188,58 @@ class IPScraper:
         
         return ips
     
+    def scrape_cf_090227_xyz(self, url: str) -> Set[str]:
+        """爬取cf.090227.xyz网站的域名信息"""
+        logger.info(f"开始爬取域名网站 {url}")
+        domains = set()
+        
+        try:
+            response = self.session.get(url, timeout=10)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # 方法1: 从按钮的onclick属性中提取域名
+            buttons = soup.find_all('button', class_='copy-domain')
+            for button in buttons:
+                onclick_value = button.get('onclick', '')
+                # 匹配copyDomain('域名')格式
+                domain_match = re.search(r"copyDomain\('([^']+)'\)", onclick_value)
+                if domain_match:
+                    domain = domain_match.group(1)
+                    if self.is_valid_domain(domain):
+                        domains.add(domain)
+            
+            # 方法2: 从按钮的文本内容中提取域名
+            if not domains:
+                for button in buttons:
+                    button_text = button.get_text(strip=True)
+                    # 尝试从按钮文本中提取域名
+                    domain_match = re.search(r'([a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z]{2,})+)$', button_text)
+                    if domain_match:
+                        domain = domain_match.group(0)
+                        if self.is_valid_domain(domain):
+                            domains.add(domain)
+            
+            # 方法3: 从所有文本中提取域名
+            if not domains:
+                domain_pattern = r'[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z]{2,})+'
+                found_domains = re.findall(domain_pattern, response.text)
+                for domain_tuple in found_domains:
+                    # 处理匹配结果，获取完整域名
+                    domain_match = re.search(domain_pattern, response.text)
+                    if domain_match:
+                        domain = domain_match.group(0)
+                        if self.is_valid_domain(domain):
+                            domains.add(domain)
+            
+            logger.info(f"从 {url} 爬取到 {len(domains)} 个域名")
+            return domains
+            
+        except Exception as e:
+            logger.error(f"爬取域名网站 {url} 时出错: {e}")
+            return set()
+    
     def scrape_generic_website(self, url: str) -> Set[str]:
         """通用爬取方法，用于未来添加新网站"""
         logger.info(f"开始通用爬取 {url}")
@@ -273,15 +326,57 @@ class IPScraper:
             
         return True
     
+    def is_valid_domain(self, domain: str) -> bool:
+        """验证域名是否有效"""
+        # 基本的域名验证规则
+        domain_pattern = r'^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z]{2,})+$'
+        
+        if not re.match(domain_pattern, domain):
+            return False
+        
+        # 排除常见的一些非域名字符串
+        excluded_patterns = [
+            r'\.com$',  # 需要更具体的域名，不是顶级域名本身
+            r'\.net$',
+            r'\.org$',
+            r'\.gov$',
+            r'\.edu$',
+            r'example\.com$',
+            r'test\.com$',
+            r'localhost$'
+        ]
+        
+        for pattern in excluded_patterns:
+            if re.search(pattern, domain, re.IGNORECASE):
+                # 检查是否只是顶级域名本身（没有子域名）
+                if domain.count('.') == 1:
+                    return False
+        
+        # 域名长度检查
+        if len(domain) < 4 or len(domain) > 253:
+            return False
+        
+        # 确保域名包含至少一个点
+        if '.' not in domain:
+            return False
+        
+        return True
+    
     def save_to_file(self, filename: str = 'ip.txt'):
-        """将IP地址保存到文件"""
-        logger.info(f"开始保存IP到文件 {filename}")
+        """将IP地址和域名保存到文件"""
+        logger.info(f"开始保存IP和域名到文件 {filename}")
+        
+        # 合并IP和域名
+        all_items = sorted(list(self.ip_set) + list(self.domain_set))
         
         with open(filename, 'w', encoding='utf-8') as f:
-            for ip in sorted(self.ip_set):
-                f.write(f"{ip}\n")
+            for item in all_items:
+                f.write(f"{item}\n")
         
-        logger.info(f"共保存 {len(self.ip_set)} 个IP到 {filename}")
+        logger.info(f"共保存 {len(all_items)} 个条目到 {filename}")
+        
+        # 分别统计IP和域名的数量
+        logger.info(f"其中包含 {len(self.ip_set)} 个IP地址和 {len(self.domain_set)} 个域名")
     
     def run(self, urls: list = None):
         """主运行函数"""
@@ -290,7 +385,8 @@ class IPScraper:
                 'https://ip.164746.xyz',
                 'https://api.uouin.com/cloudflare.html',
                 'https://www.wetest.vip/page/cloudflare/address_v4.html',
-                'https://stock.hostmonit.com/CloudFlareYes'
+                'https://stock.hostmonit.com/CloudFlareYes',
+                'https://cf.090227.xyz/'  # 新增的域名网站
             ]
         
         logger.info(f"开始爬取 {len(urls)} 个网站")
@@ -300,7 +396,8 @@ class IPScraper:
             'ip.164746.xyz': self.scrape_ip_164746_xyz,
             'api.uouin.com': self.scrape_api_uouin,
             'www.wetest.vip': self.scrape_wetest_vip,
-            'stock.hostmonit.com': self.scrape_hostmonit_api
+            'stock.hostmonit.com': self.scrape_hostmonit_api,
+            'cf.090227.xyz': self.scrape_cf_090227_xyz  # 新增域名网站处理器
         }
         
         for url in urls:
@@ -316,15 +413,25 @@ class IPScraper:
             if handler is None:
                 handler = self.scrape_generic_website
             
-            # 爬取IP
-            ips = handler(url)
+            # 爬取数据
+            items = handler(url)
             
-            # 添加到总集合
-            before_count = len(self.ip_set)
-            self.ip_set.update(ips)
-            added_count = len(self.ip_set) - before_count
-            
-            logger.info(f"从 {url} 添加了 {added_count} 个新IP")
+            # 根据返回的数据类型判断是IP还是域名
+            if items:
+                # 随机取一个样本判断是IP还是域名
+                sample = next(iter(items))
+                if self.is_valid_ip(sample):
+                    # 添加到IP集合
+                    before_count = len(self.ip_set)
+                    self.ip_set.update(items)
+                    added_count = len(self.ip_set) - before_count
+                    logger.info(f"从 {url} 添加了 {added_count} 个新IP")
+                else:
+                    # 添加到域名集合
+                    before_count = len(self.domain_set)
+                    self.domain_set.update(items)
+                    added_count = len(self.domain_set) - before_count
+                    logger.info(f"从 {url} 添加了 {added_count} 个新域名")
             
             # 添加延迟避免被屏蔽
             time.sleep(1)
@@ -334,8 +441,8 @@ class IPScraper:
         
         # 打印统计信息
         logger.info("=" * 50)
-        logger.info(f"爬取完成！总共收集到 {len(self.ip_set)} 个唯一IP地址")
-        logger.info(f"IP地址已保存到 ip.txt")
+        logger.info(f"爬取完成！总共收集到 {len(self.ip_set)} 个唯一IP地址和 {len(self.domain_set)} 个唯一域名")
+        logger.info(f"IP和域名已保存到 ip.txt")
         
         # 显示前10个IP作为示例
         if self.ip_set:
@@ -344,12 +451,20 @@ class IPScraper:
                 logger.info(f"  {i+1}. {ip}")
             if len(self.ip_set) > 10:
                 logger.info(f"  ... 还有 {len(self.ip_set) - 10} 个IP")
+        
+        # 显示前10个域名作为示例
+        if self.domain_set:
+            logger.info("示例域名:")
+            for i, domain in enumerate(sorted(self.domain_set)[:10]):
+                logger.info(f"  {i+1}. {domain}")
+            if len(self.domain_set) > 10:
+                logger.info(f"  ... 还有 {len(self.domain_set) - 10} 个域名")
 
 
 def main():
     """主函数"""
     logger.info("=" * 50)
-    logger.info("IP爬虫脚本启动")
+    logger.info("IP和域名爬虫脚本启动")
     logger.info("=" * 50)
     
     # 创建爬虫实例
@@ -360,9 +475,8 @@ def main():
         'https://ip.164746.xyz',
         'https://api.uouin.com/cloudflare.html',
         'https://www.wetest.vip/page/cloudflare/address_v4.html',
-        'https://stock.hostmonit.com/CloudFlareYes'
-        # 可以在此添加更多网站，例如：
-        # 'https://example.com/ip-list.html',
+        'https://stock.hostmonit.com/CloudFlareYes',
+        'https://cf.090227.xyz/'  # 新增的域名网站
     ]
     
     # 运行爬虫
