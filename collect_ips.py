@@ -10,7 +10,7 @@ from typing import Set, List, Optional, Dict, Any
 CONFIG = {
     'timeout': 15,
     'max_retries': 2,
-    'delay_between_requests': 0.3,
+    'delay_between_requests': 0.5,
     'output_file': 'ip.txt'
 }
 
@@ -21,24 +21,23 @@ HEADERS = {
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
     'Accept-Encoding': 'gzip, deflate, br',
     'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
 }
 
 # IP地址正则表达式
 IP_PATTERN = re.compile(
-    r'(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}'
+    r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}'
     r'(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b'
 )
 
-# 要抓取的网页列表（请根据实际情况修改）
+# 要抓取的网页列表
 URLS = [
     'https://ip.164746.xyz',
     'https://api.uouin.com/cloudflare.html',
     'https://www.wetest.vip/page/cloudflare/address_v4.html',
-    'https://stock.hostmonit.com/CloudFlareYes'
+    'https://stock.hostmonit.com/CloudFlareYes',
 ]
 
-class WebIPScraper:
+class TargetedIPScraper:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = {**CONFIG, **(config or {})}
         self.session = requests.Session()
@@ -62,90 +61,114 @@ class WebIPScraper:
                 continue
         return None
     
-    def _detect_encoding(self, response: requests.Response) -> str:
-        """自动检测文本编码"""
-        if response.encoding:
-            return response.encoding
-        return 'utf-8'
-    
-    def _extract_ips_with_regex(self, text: str) -> List[str]:
-        """使用正则表达式从文本中提取IP地址"""
-        return IP_PATTERN.findall(text)
-    
-    def _parse_json_content(self, text: str) -> List[str]:
-        """尝试解析JSON格式的内容"""
+    def _parse_ip_164746_xyz(self, content: str) -> List[str]:
+        """解析 https://ip.164746.xyz 格式"""
         ips = []
         try:
-            data = json.loads(text)
-            if isinstance(data, dict):
-                # 尝试从常见字段中提取IP
-                for key in ['ips', 'ip', 'addresses', 'data', 'info', 'results']:
-                    if key in data:
-                        value = data[key]
-                        if isinstance(value, str):
-                            ips.extend(self._extract_ips_with_regex(value))
-                        elif isinstance(value, list):
-                            for item in value:
-                                if isinstance(item, str):
-                                    ips.extend(self._extract_ips_with_regex(item))
-        except json.JSONDecodeError:
-            pass
-        return ips
-    
-    def _parse_html_content(self, text: str) -> List[str]:
-        """解析HTML内容提取IP地址"""
-        ips = []
-        try:
-            soup = BeautifulSoup(text, 'html.parser')
+            soup = BeautifulSoup(content, 'html.parser')
+            # 查找所有包含IP的<a>标签
+            for a_tag in soup.find_all('a', href=True):
+                # 检查链接文本是否为IP地址
+                link_text = a_tag.get_text().strip()
+                if IP_PATTERN.fullmatch(link_text):
+                    ips.append(link_text)
             
-            # 常见包含IP的标签和class
-            tag_selectors = [
-                ('code', []),
-                ('pre', []),
-                ('div', ['ip', 'address', 'ip-address']),
-                ('span', ['ip', 'ip-address']),
-                ('p', ['ip']),
-                ('td', ['ip']),
-                ('li', ['ip']),
-            ]
-            
-            for tag_name, class_list in tag_selectors:
-                if class_list:
-                    for class_name in class_list:
-                        elements = soup.find_all(tag_name, class_=class_name)
-                        for element in elements:
-                            ips.extend(self._extract_ips_with_regex(element.get_text()))
-                else:
-                    elements = soup.find_all(tag_name)
-                    for element in elements:
-                        text_content = element.get_text()
-                        if any(char.isdigit() for char in text_content) and '.' in text_content:
-                            ips.extend(self._extract_ips_with_regex(text_content))
-            
-            # 如果没找到，尝试整个文档
+            # 如果没有找到，尝试查找包含IP地址的td单元格
             if not ips:
-                all_text = soup.get_text()
-                ips = self._extract_ips_with_regex(all_text)
-                
-        except Exception:
-            # 回退到正则匹配
-            ips = self._extract_ips_with_regex(text)
-        return ips
+                for td in soup.find_all('td'):
+                    td_text = td.get_text().strip()
+                    if IP_PATTERN.fullmatch(td_text):
+                        ips.append(td_text)
+                    else:
+                        # 尝试从文本中提取IP
+                        found = IP_PATTERN.findall(td_text)
+                        ips.extend(found)
+            
+        except Exception as e:
+            print(f"  解析ip.164746.xyz时出错: {e}")
+        
+        return list(set(ips))
     
-    def _parse_text_content(self, text: str) -> List[str]:
-        """解析纯文本内容"""
+    def _parse_api_uouin_com(self, content: str) -> List[str]:
+        """解析 https://api.uouin.com/cloudflare.html 格式"""
         ips = []
-        lines = text.split('\n')
-        for line in lines:
-            line = line.strip()
-            if not line or line.startswith(('#', '//', '/*', '*', '--')):
-                continue
-            if '#' in line:
-                line = line.split('#')[0].strip()
-            if '//' in line:
-                line = line.split('//')[0].strip()
-            ips.extend(self._extract_ips_with_regex(line))
-        return ips
+        try:
+            soup = BeautifulSoup(content, 'html.parser')
+            
+            # 查找所有表格行
+            for tr in soup.find_all('tr'):
+                # 获取行中所有td单元格
+                tds = tr.find_all('td')
+                if len(tds) >= 3:  # 至少要有3个td
+                    # 第三个td包含IP地址（索引为2）
+                    ip_td = tds[2]
+                    ip_text = ip_td.get_text().strip()
+                    
+                    # 验证是否为IP地址
+                    if IP_PATTERN.fullmatch(ip_text):
+                        ips.append(ip_text)
+            
+            # 备用方法：从所有td中查找IP
+            if not ips:
+                for td in soup.find_all('td'):
+                    td_text = td.get_text().strip()
+                    if IP_PATTERN.fullmatch(td_text):
+                        ips.append(td_text)
+            
+        except Exception as e:
+            print(f"  解析api.uouin.com时出错: {e}")
+        
+        return list(set(ips))
+    
+    def _parse_stock_hostmonit_com(self, content: str) -> List[str]:
+        """解析 https://stock.hostmonit.com/CloudFlareYes JSON格式"""
+        ips = []
+        try:
+            # 解析JSON
+            data = json.loads(content)
+            
+            # 检查code是否为200
+            if data.get('code') == 200 and 'info' in data:
+                for item in data['info']:
+                    if 'ip' in item:
+                        ip = str(item['ip']).strip()
+                        if IP_PATTERN.fullmatch(ip):
+                            ips.append(ip)
+            
+        except json.JSONDecodeError as e:
+            print(f"  解析JSON失败: {e}")
+        except Exception as e:
+            print(f"  解析stock.hostmonit.com时出错: {e}")
+        
+        return list(set(ips))
+    
+    def _parse_wetest_vip(self, content: str) -> List[str]:
+        """解析 https://www.wetest.vip/page/cloudflare/address_v4.html"""
+        ips = []
+        try:
+            soup = BeautifulSoup(content, 'html.parser')
+            
+            # 查找所有<p>标签
+            for p_tag in soup.find_all('p'):
+                p_text = p_tag.get_text().strip()
+                # 尝试提取IP地址
+                found = IP_PATTERN.findall(p_text)
+                ips.extend(found)
+            
+            # 如果没有找到，尝试查找所有包含数字的文本
+            if not ips:
+                for element in soup.find_all(text=True):
+                    if element.parent.name in ['script', 'style']:
+                        continue
+                    text = str(element).strip()
+                    if text:
+                        found = IP_PATTERN.findall(text)
+                        ips.extend(found)
+            
+        except Exception as e:
+            print(f"  解析wetest.vip时出错: {e}")
+        
+        return list(set(ips))
     
     def scrape_url(self, url: str) -> List[str]:
         """抓取单个URL并提取IP地址"""
@@ -153,27 +176,35 @@ class WebIPScraper:
         if not response:
             return []
         
-        # 检测编码并获取文本
-        encoding = self._detect_encoding(response)
+        # 检测编码
         try:
-            content = response.content.decode(encoding)
+            content = response.content.decode('utf-8')
         except UnicodeDecodeError:
-            content = response.text
+            try:
+                content = response.content.decode('gbk')
+            except UnicodeDecodeError:
+                content = response.text
         
-        ips = []
-        content_type = response.headers.get('Content-Type', '').lower()
+        # 根据URL选择解析方法
+        domain = urlparse(url).netloc
         
-        # 根据内容类型选择解析方法
-        if 'application/json' in content_type or url.endswith('.json'):
-            ips = self._parse_json_content(content)
-        elif 'text/html' in content_type:
-            ips = self._parse_html_content(content)
+        if domain == 'ip.164746.xyz':
+            ips = self._parse_ip_164746_xyz(content)
+        elif domain == 'api.uouin.com':
+            ips = self._parse_api_uouin_com(content)
+        elif domain == 'stock.hostmonit.com':
+            ips = self._parse_stock_hostmonit_com(content)
+        elif domain == 'www.wetest.vip':
+            ips = self._parse_wetest_vip(content)
         else:
-            ips = self._parse_text_content(content)
+            # 通用解析方法
+            ips = IP_PATTERN.findall(content)
+            # 去重
+            ips = list(set(ips))
         
-        # 验证IP格式并去重
+        # 验证IP格式
         validated_ips = []
-        for ip in set(ips):
+        for ip in ips:
             if IP_PATTERN.fullmatch(ip):
                 validated_ips.append(ip)
         
@@ -182,6 +213,8 @@ class WebIPScraper:
     def scrape_all(self, urls: List[str]) -> Set[str]:
         """抓取所有URL"""
         print("开始抓取IP地址...")
+        print("=" * 50)
+        
         all_ips = set()
         
         for i, url in enumerate(urls, 1):
@@ -203,6 +236,7 @@ class WebIPScraper:
             except Exception as e:
                 print(f"  抓取失败: {e}")
         
+        print("=" * 50)
         self.all_ips = all_ips
         return all_ips
     
@@ -214,7 +248,8 @@ class WebIPScraper:
         
         # 按IP地址数字排序
         def ip_key(ip: str) -> tuple:
-            return tuple(map(int, ip.split('.')))
+            parts = ip.split('.')
+            return tuple(int(part) for part in parts)
         
         sorted_ips = sorted(self.all_ips, key=ip_key)
         
@@ -223,8 +258,18 @@ class WebIPScraper:
                 for ip in sorted_ips:
                     f.write(ip + '\n')
             
-            print(f"完成！总共收集到 {len(self.all_ips)} 个IP地址")
+            print(f"完成！总共收集到 {len(self.all_ips)} 个唯一IP地址")
             print(f"结果已保存到: {self.config['output_file']}")
+            
+            # 显示部分结果
+            if sorted_ips:
+                print("\n前20个IP地址:")
+                for i, ip in enumerate(sorted_ips[:20], 1):
+                    print(f"  {i:2d}. {ip}")
+                if len(sorted_ips) > 20:
+                    print(f"  ... 还有 {len(sorted_ips) - 20} 个")
+            print("=" * 50)
+            
             return True
             
         except Exception as e:
@@ -234,7 +279,7 @@ class WebIPScraper:
 def main():
     """主函数"""
     # 创建爬虫实例
-    scraper = WebIPScraper()
+    scraper = TargetedIPScraper()
     
     # 执行抓取
     scraper.scrape_all(URLS)
