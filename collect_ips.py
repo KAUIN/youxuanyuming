@@ -593,7 +593,7 @@ class IPScraper:
             time.sleep(1)
         
         # 保存到文件（可以选择分开保存或合并保存）
-        self.save_to_files('ipv4.txt', 'ipv6.txt', 'domain.txt')
+        #self.save_to_files('ipv4.txt', 'ipv6.txt', 'domain.txt')
         # 或者合并保存到一个文件
         self.save_combined_to_file('ip.txt')
         
