@@ -534,6 +534,7 @@ class IPScraper:
                 'https://ip.164746.xyz',
                 'https://api.uouin.com/cloudflare.html',
                 'https://www.wetest.vip/page/cloudflare/address_v4.html',
+                'https://www.wetest.vip/page/cloudflare/address_v6.html',
                 'https://stock.hostmonit.com/CloudFlareYes',
                 'https://cf.090227.xyz/'  # 新增的域名网站
             ]
@@ -642,6 +643,7 @@ def main():
         'https://ip.164746.xyz',
         'https://api.uouin.com/cloudflare.html',
         'https://www.wetest.vip/page/cloudflare/address_v4.html',
+        'https://www.wetest.vip/page/cloudflare/address_v6.html',
         'https://stock.hostmonit.com/CloudFlareYes',
         'https://cf.090227.xyz/'  # 新增的域名网站
     ]
