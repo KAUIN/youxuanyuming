@@ -292,7 +292,7 @@ class IPScraper:
                             domains.add(domain)
             
             logger.info(f"从 {url} 爬取到 {len(domains)} 个域名")
-            return domains, set()
+            return set(), domains  # 修复这里：返回空集合和域名集合
             
         except Exception as e:
             logger.error(f"爬取域名网站 {url} 时出错: {e}")
@@ -392,6 +392,10 @@ class IPScraper:
     
     def is_valid_ipv4(self, ip: str) -> bool:
         """验证IPv4地址是否有效"""
+        # 首先检查是否是域名
+        if self.is_valid_domain(ip):
+            return False
+            
         ip_pattern = r'^\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b$'
         if not re.match(ip_pattern, ip):
             return False
@@ -419,6 +423,10 @@ class IPScraper:
     
     def is_valid_ipv6(self, ipv6: str) -> bool:
         """验证IPv6地址是否有效"""
+        # 首先检查是否是域名
+        if self.is_valid_domain(ipv6):
+            return False
+            
         # 首先用正则表达式进行基本验证
         ipv6_pattern = self._get_ipv6_pattern()
         if not re.fullmatch(ipv6_pattern, ipv6):
@@ -448,6 +456,13 @@ class IPScraper:
     
     def is_valid_domain(self, domain: str) -> bool:
         """验证域名是否有效"""
+        # 排除IP地址
+        if self.is_valid_ipv4(domain):
+            return False
+        
+        if self.is_valid_ipv6(domain):
+            return False
+            
         # 基本的域名验证规则
         domain_pattern = r'^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z]{2,})+$'
         
@@ -516,16 +531,31 @@ class IPScraper:
         
         # 合并所有项目
         all_items = []
-        all_items.extend(sorted(list(self.ipv4_set)))
-        all_items.extend(sorted(list(self.ipv6_set)))
-        all_items.extend(sorted(list(self.domain_set)))
+        
+        # 先添加IPv4地址
+        if self.ipv4_set:
+            all_items.extend(sorted(list(self.ipv4_set)))
+        
+        # 再添加IPv6地址
+        if self.ipv6_set:
+            all_items.extend(sorted(list(self.ipv6_set)))
+        
+        # 最后添加域名（但只添加不重复的域名）
+        if self.domain_set:
+            # 过滤掉已经存在于IPv4或IPv6集合中的域名
+            unique_domains = []
+            for domain in sorted(self.domain_set):
+                # 确保域名既不是IPv4也不是IPv6
+                if not self.is_valid_ipv4(domain) and not self.is_valid_ipv6(domain):
+                    unique_domains.append(domain)
+            all_items.extend(unique_domains)
         
         with open(filename, 'w', encoding='utf-8') as f:
             for item in all_items:
                 f.write(f"{item}\n")
         
         logger.info(f"共保存 {len(all_items)} 个条目到 {filename}")
-        logger.info(f"其中包含 {len(self.ipv4_set)} 个IPv4地址, {len(self.ipv6_set)} 个IPv6地址, {len(self.domain_set)} 个域名")
+        logger.info(f"其中包含 {len(self.ipv4_set)} 个IPv4地址, {len(self.ipv6_set)} 个IPv6地址, {len(unique_domains) if self.domain_set else 0} 个唯一域名")
     
     def run(self, urls: list = None):
         """主运行函数"""
@@ -566,28 +596,32 @@ class IPScraper:
             # 爬取数据
             ipv4_items, ipv6_items = handler(url)
             
-            # 添加到对应的集合
-            if ipv4_items:
-                before_count = len(self.ipv4_set)
-                self.ipv4_set.update(ipv4_items)
-                added_count = len(self.ipv4_set) - before_count
-                logger.info(f"从 {url} 添加了 {added_count} 个新IPv4地址")
-            
-            if ipv6_items:
-                before_count = len(self.ipv6_set)
-                self.ipv6_set.update(ipv6_items)
-                added_count = len(self.ipv6_set) - before_count
-                logger.info(f"从 {url} 添加了 {added_count} 个新IPv6地址")
-            
-            # 对于域名网站，特殊处理
+            # 对于域名网站，ipv6_items包含域名
             if 'cf.090227.xyz' in url:
-                # 从域名网站返回的第一个集合是域名
-                domains = ipv4_items  # 注意：这里ipv4_items实际上包含域名
+                # 域名被返回在ipv6_items中（因为修改了scrape_cf_090227_xyz方法的返回值）
+                domains = ipv6_items
                 if domains:
                     before_count = len(self.domain_set)
                     self.domain_set.update(domains)
                     added_count = len(self.domain_set) - before_count
                     logger.info(f"从 {url} 添加了 {added_count} 个新域名")
+            else:
+                # 添加到对应的集合
+                if ipv4_items:
+                    before_count = len(self.ipv4_set)
+                    # 过滤掉可能的域名
+                    valid_ips = [ip for ip in ipv4_items if self.is_valid_ipv4(ip)]
+                    self.ipv4_set.update(valid_ips)
+                    added_count = len(self.ipv4_set) - before_count
+                    logger.info(f"从 {url} 添加了 {added_count} 个新IPv4地址")
+                
+                if ipv6_items:
+                    before_count = len(self.ipv6_set)
+                    # 过滤掉可能的域名
+                    valid_ipv6s = [ip for ip in ipv6_items if self.is_valid_ipv6(ip)]
+                    self.ipv6_set.update(valid_ipv6s)
+                    added_count = len(self.ipv6_set) - before_count
+                    logger.info(f"从 {url} 添加了 {added_count} 个新IPv6地址")
             
             # 添加延迟避免被屏蔽
             time.sleep(1)
