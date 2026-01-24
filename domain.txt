@@ -1,1 +1,8 @@
-
+cf.tencentapp.cn
+cloudflare-dl.byoip.top
+mfa.gov.ua
+saas.sin.fan
+staticdelivery.nexusmods.com
+store.ubi.com
+www.shopify.com
+www.visa.cn
