@@ -46,7 +46,7 @@ class IPScraper:
             ipv6_links = soup.find_all('a', href=re.compile(r'ipv6/[0-9a-fA-F:]+'))
             for link in ipv6_links:
                 ipv6_match = re.search(r'ipv6/([0-9a-fA-F:]+)', link['href'])
-                if ipv6_match and self.is_valid_ipv6(ipv6_match.group(1)):
+                if ipv6_match and self._is_valid_ipv6_format(ipv6_match.group(1)):
                     ipv6_set.add(ipv6_match.group(1))
             
             # 方法2: 通过文本模式查找（备用方法）
@@ -55,7 +55,7 @@ class IPScraper:
                 found_ips = re.findall(ipv4_pattern, response.text)
                 # 过滤掉一些明显不是IP的数字
                 for ip in found_ips:
-                    if self.is_valid_ipv4(ip):
+                    if self._is_valid_ipv4_format(ip):
                         ipv4_set.add(ip)
             
             # 查找文本中的IPv6地址
@@ -63,7 +63,7 @@ class IPScraper:
                 ipv6_pattern = self._get_ipv6_pattern()
                 found_ipv6s = re.findall(ipv6_pattern, response.text)
                 for ipv6 in found_ipv6s:
-                    if self.is_valid_ipv6(ipv6):
+                    if self._is_valid_ipv6_format(ipv6):
                         ipv6_set.add(ipv6)
             
             logger.info(f"从 {url} 爬取到 {len(ipv4_set)} 个IPv4地址和 {len(ipv6_set)} 个IPv6地址")
@@ -93,10 +93,10 @@ class IPScraper:
                     # 第三个td包含IP地址
                     ip_candidate = tds[2].get_text(strip=True)
                     # 检查是否是IPv4
-                    if self.is_valid_ipv4(ip_candidate):
+                    if self._is_valid_ipv4_format(ip_candidate):
                         ipv4_set.add(ip_candidate)
                     # 检查是否是IPv6
-                    elif self.is_valid_ipv6(ip_candidate):
+                    elif self._is_valid_ipv6_format(ip_candidate):
                         ipv6_set.add(ip_candidate)
             
             # 备用方法：使用正则表达式直接搜索
@@ -105,14 +105,14 @@ class IPScraper:
                 ipv4_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
                 found_ips = re.findall(ipv4_pattern, response.text)
                 for ip in found_ips:
-                    if self.is_valid_ipv4(ip):
+                    if self._is_valid_ipv4_format(ip):
                         ipv4_set.add(ip)
                 
                 # 搜索IPv6
                 ipv6_pattern = self._get_ipv6_pattern()
                 found_ipv6s = re.findall(ipv6_pattern, response.text)
                 for ipv6 in found_ipv6s:
-                    if self.is_valid_ipv6(ipv6):
+                    if self._is_valid_ipv6_format(ipv6):
                         ipv6_set.add(ipv6)
             
             logger.info(f"从 {url} 爬取到 {len(ipv4_set)} 个IPv4地址和 {len(ipv6_set)} 个IPv6地址")
@@ -142,10 +142,10 @@ class IPScraper:
                 for td in ip_tds:
                     ip_text = td.get_text(strip=True)
                     # 检查是否是IPv4
-                    if self.is_valid_ipv4(ip_text):
+                    if self._is_valid_ipv4_format(ip_text):
                         ipv4_set.add(ip_text)
                     # 检查是否是IPv6
-                    elif self.is_valid_ipv6(ip_text):
+                    elif self._is_valid_ipv6_format(ip_text):
                         ipv6_set.add(ip_text)
             
             # 备用方法
@@ -154,14 +154,14 @@ class IPScraper:
                 ipv4_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
                 found_ips = re.findall(ipv4_pattern, response.text)
                 for ip in found_ips:
-                    if self.is_valid_ipv4(ip):
+                    if self._is_valid_ipv4_format(ip):
                         ipv4_set.add(ip)
                 
                 # 搜索IPv6
                 ipv6_pattern = self._get_ipv6_pattern()
                 found_ipv6s = re.findall(ipv6_pattern, response.text)
                 for ipv6 in found_ipv6s:
-                    if self.is_valid_ipv6(ipv6):
+                    if self._is_valid_ipv6_format(ipv6):
                         ipv6_set.add(ipv6)
             
             logger.info(f"从 {url} 爬取到 {len(ipv4_set)} 个IPv4地址和 {len(ipv6_set)} 个IPv6地址")
@@ -219,7 +219,7 @@ class IPScraper:
             data_v4 = json.loads(response_v4.text)
             if data_v4.get('code') == 200:
                 for item in data_v4.get('info', []):
-                    if 'ip' in item and self.is_valid_ipv4(item['ip']):
+                    if 'ip' in item and self._is_valid_ipv4_format(item['ip']):
                         ipv4_set.add(item['ip'])
                 logger.info(f"从hostmonit API成功获取 {len(ipv4_set)} 个IPv4地址")
             else:
@@ -230,7 +230,7 @@ class IPScraper:
             data_v6 = json.loads(response_v6.text)
             if data_v6.get('code') == 200:
                 for item in data_v6.get('info', []):
-                    if 'ip' in item and self.is_valid_ipv6(item['ip']):
+                    if 'ip' in item and self._is_valid_ipv6_format(item['ip']):
                         ipv6_set.add(item['ip'])
                 logger.info(f"从hostmonit API成功获取 {len(ipv6_set)} 个IPv6地址")
             else:
@@ -292,7 +292,7 @@ class IPScraper:
                             domains.add(domain)
             
             logger.info(f"从 {url} 爬取到 {len(domains)} 个域名")
-            return set(), domains  # 修复这里：返回空集合和域名集合
+            return set(), domains  # 返回空IPv4集合和域名集合
             
         except Exception as e:
             logger.error(f"爬取域名网站 {url} 时出错: {e}")
@@ -315,9 +315,9 @@ class IPScraper:
                     if isinstance(obj, dict):
                         for key, value in obj.items():
                             if isinstance(value, str):
-                                if self.is_valid_ipv4(value):
+                                if self._is_valid_ipv4_format(value):
                                     ipv4_set.add(value)
-                                elif self.is_valid_ipv6(value):
+                                elif self._is_valid_ipv6_format(value):
                                     ipv6_set.add(value)
                             else:
                                 find_ips_in_dict(value, ipv4_set, ipv6_set)
@@ -339,14 +339,14 @@ class IPScraper:
                 ipv4_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
                 found_ipv4s = re.findall(ipv4_pattern, response.text)
                 for ip in found_ipv4s:
-                    if self.is_valid_ipv4(ip):
+                    if self._is_valid_ipv4_format(ip):
                         ipv4_set.add(ip)
                 
                 # 搜索IPv6
                 ipv6_pattern = self._get_ipv6_pattern()
                 found_ipv6s = re.findall(ipv6_pattern, response.text)
                 for ipv6 in found_ipv6s:
-                    if self.is_valid_ipv6(ipv6):
+                    if self._is_valid_ipv6_format(ipv6):
                         ipv6_set.add(ipv6)
                 
                 if ipv4_set or ipv6_set:
@@ -359,13 +359,13 @@ class IPScraper:
             ipv4_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
             found_ipv4s = re.findall(ipv4_pattern, response.text)
             for ip in found_ipv4s:
-                if self.is_valid_ipv4(ip):
+                if self._is_valid_ipv4_format(ip):
                     ipv4_set.add(ip)
             
             ipv6_pattern = self._get_ipv6_pattern()
             found_ipv6s = re.findall(ipv6_pattern, response.text)
             for ipv6 in found_ipv6s:
-                if self.is_valid_ipv6(ipv6):
+                if self._is_valid_ipv6_format(ipv6):
                     ipv6_set.add(ipv6)
             
             logger.info(f"从 {url} 爬取到 {len(ipv4_set)} 个IPv4地址和 {len(ipv6_set)} 个IPv6地址")
@@ -390,12 +390,8 @@ class IPScraper:
                r'fe80:(?::[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]+|' \
                r'::(?:ffff(?::0{1,4})?:)?(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}'
     
-    def is_valid_ipv4(self, ip: str) -> bool:
-        """验证IPv4地址是否有效"""
-        # 首先检查是否是域名
-        if self.is_valid_domain(ip):
-            return False
-            
+    def _is_valid_ipv4_format(self, ip: str) -> bool:
+        """验证IPv4地址格式是否有效（不检查是否是域名）"""
         ip_pattern = r'^\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b$'
         if not re.match(ip_pattern, ip):
             return False
@@ -421,12 +417,15 @@ class IPScraper:
             
         return True
     
-    def is_valid_ipv6(self, ipv6: str) -> bool:
-        """验证IPv6地址是否有效"""
+    def is_valid_ipv4(self, ip: str) -> bool:
+        """公开的IPv4验证方法，排除域名"""
         # 首先检查是否是域名
-        if self.is_valid_domain(ipv6):
+        if self.is_valid_domain(ip):
             return False
-            
+        return self._is_valid_ipv4_format(ip)
+    
+    def _is_valid_ipv6_format(self, ipv6: str) -> bool:
+        """验证IPv6地址格式是否有效（不检查是否是域名）"""
         # 首先用正则表达式进行基本验证
         ipv6_pattern = self._get_ipv6_pattern()
         if not re.fullmatch(ipv6_pattern, ipv6):
@@ -454,13 +453,22 @@ class IPScraper:
         
         return True
     
+    def is_valid_ipv6(self, ipv6: str) -> bool:
+        """公开的IPv6验证方法，排除域名"""
+        # 首先检查是否是域名
+        if self.is_valid_domain(ipv6):
+            return False
+        return self._is_valid_ipv6_format(ipv6)
+    
     def is_valid_domain(self, domain: str) -> bool:
         """验证域名是否有效"""
-        # 排除IP地址
-        if self.is_valid_ipv4(domain):
+        # 检查是否是IPv4地址
+        if self._is_valid_ipv4_format(domain):
             return False
         
-        if self.is_valid_ipv6(domain):
+        # 检查是否是IPv6地址
+        ipv6_pattern = self._get_ipv6_pattern()
+        if re.fullmatch(ipv6_pattern, domain):
             return False
             
         # 基本的域名验证规则
@@ -540,22 +548,17 @@ class IPScraper:
         if self.ipv6_set:
             all_items.extend(sorted(list(self.ipv6_set)))
         
-        # 最后添加域名（但只添加不重复的域名）
+        # 最后添加域名
         if self.domain_set:
-            # 过滤掉已经存在于IPv4或IPv6集合中的域名
-            unique_domains = []
-            for domain in sorted(self.domain_set):
-                # 确保域名既不是IPv4也不是IPv6
-                if not self.is_valid_ipv4(domain) and not self.is_valid_ipv6(domain):
-                    unique_domains.append(domain)
-            all_items.extend(unique_domains)
+            sorted_domains = sorted(list(self.domain_set))
+            all_items.extend(sorted_domains)
         
         with open(filename, 'w', encoding='utf-8') as f:
             for item in all_items:
                 f.write(f"{item}\n")
         
         logger.info(f"共保存 {len(all_items)} 个条目到 {filename}")
-        logger.info(f"其中包含 {len(self.ipv4_set)} 个IPv4地址, {len(self.ipv6_set)} 个IPv6地址, {len(unique_domains) if self.domain_set else 0} 个唯一域名")
+        logger.info(f"其中包含 {len(self.ipv4_set)} 个IPv4地址, {len(self.ipv6_set)} 个IPv6地址, {len(self.domain_set)} 个域名")
     
     def run(self, urls: list = None):
         """主运行函数"""
@@ -596,9 +599,9 @@ class IPScraper:
             # 爬取数据
             ipv4_items, ipv6_items = handler(url)
             
-            # 对于域名网站，ipv6_items包含域名
+            # 对于域名网站，特殊处理
             if 'cf.090227.xyz' in url:
-                # 域名被返回在ipv6_items中（因为修改了scrape_cf_090227_xyz方法的返回值）
+                # 从域名网站返回的第二个集合是域名
                 domains = ipv6_items
                 if domains:
                     before_count = len(self.domain_set)
@@ -626,9 +629,7 @@ class IPScraper:
             # 添加延迟避免被屏蔽
             time.sleep(1)
         
-        # 保存到文件（可以选择分开保存或合并保存）
-        #self.save_to_files('ipv4.txt', 'ipv6.txt', 'domain.txt')
-        # 或者合并保存到一个文件
+        # 保存到文件
         self.save_combined_to_file('ip.txt')
         
         # 打印统计信息
