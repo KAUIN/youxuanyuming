@@ -1,4 +1,4 @@
-name: Update IP List
+name: Update IP Lists
 
 on:
   schedule:
@@ -35,22 +35,25 @@ jobs:
     - name: Run script
       run: |
         python collect_ips.py
-        echo "脚本执行完成，检查ip.txt:"
-        if [ -f "ip.txt" ]; then
-          echo "ip.txt存在，内容前10行:"
-          head -10 ip.txt
-          echo "文件行数:"
-          wc -l ip.txt
-        else
-          echo "ip.txt不存在!"
-        fi
+        echo "脚本执行完成，检查生成的文件:"
+        for file in ip.txt ipv4.txt ipv6.txt domain.txt; do
+          if [ -f "$file" ]; then
+            echo "$file 存在，内容前5行:"
+            head -5 "$file"
+            echo "文件行数:"
+            wc -l "$file"
+            echo "---"
+          else
+            echo "$file 不存在!"
+          fi
+        done
         
     - name: Show git status
       run: |
         echo "Git状态:"
         git status
         echo "---"
-        echo "Git diff:"
+        echo "变更的文件:"
         git diff --name-only
         
     - name: Commit and push changes
@@ -62,12 +65,24 @@ jobs:
         # 拉取最新更改，避免冲突
         git pull origin main
         
-        if [ -n "$(git status --porcelain ip.txt)" ]; then
-          echo "检测到ip.txt有变化"
-          git add ip.txt
-          git commit -m "Automatic update: $(date '+%Y-%m-%d %H:%M:%S')"
+        # 检查所有相关文件是否有变化
+        files_changed=false
+        files_to_check=("ip.txt" "ipv4.txt" "ipv6.txt" "domain.txt")
+        
+        for file in "${files_to_check[@]}"; do
+          if [ -n "$(git status --porcelain "$file")" ]; then
+            echo "检测到 $file 有变化"
+            git add "$file"
+            files_changed=true
+          fi
+        done
+        
+        if [ "$files_changed" = true ]; then
+          echo "有文件发生变化，准备提交"
+          git commit -m "Automatic update: $(date '+%Y-%m-%d %H:%M:%S')
+          - 更新IP列表和域名"
           git push origin main
           echo "已提交并推送更改"
         else
-          echo "ip.txt没有变化，跳过提交"
+          echo "没有文件发生变化，跳过提交"
         fi
