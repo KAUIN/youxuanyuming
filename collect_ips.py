@@ -645,6 +645,7 @@ def main():
         'https://www.wetest.vip/page/cloudflare/address_v4.html',
         'https://www.wetest.vip/page/cloudflare/address_v6.html',
         'https://stock.hostmonit.com/CloudFlareYes',
+        'https://stock.hostmonit.com/CloudFlareYesV6',
         'https://cf.090227.xyz/'  # 新增的域名网站
     ]
     
