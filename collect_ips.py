@@ -631,7 +631,7 @@ class IPScraper:
         
         # 保存到文件
         self.save_combined_to_file('ip.txt')
-        
+        self.save_to_files()
         # 打印统计信息
         logger.info("=" * 50)
         logger.info(f"爬取完成！总共收集到:")
