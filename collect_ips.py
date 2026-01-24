@@ -536,9 +536,9 @@ class IPScraper:
                 'https://www.wetest.vip/page/cloudflare/address_v4.html',
                 'https://www.wetest.vip/page/cloudflare/address_v6.html',
                 'https://stock.hostmonit.com/CloudFlareYes',
+                'https://stock.hostmonit.com/CloudFlareYesV6',
                 'https://cf.090227.xyz/'  # 新增的域名网站
             ]
-        
         logger.info(f"开始爬取 {len(urls)} 个网站")
         
         # 定义网站与爬取方法的映射
