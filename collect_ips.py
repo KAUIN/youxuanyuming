@@ -3,7 +3,7 @@ import json
 import re
 from bs4 import BeautifulSoup
 import time
-from typing import Set, Dict, Any
+from typing import Set, Tuple
 import logging
 
 # 设置日志
@@ -17,548 +17,286 @@ class IPScraper:
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
-        self.ipv4_set = set()  # 存储IPv4地址
-        self.ipv6_set = set()  # 存储IPv6地址
-        self.domain_set = set()  # 使用集合避免重复域名
+        self.ipv4_set = set()
+        self.ipv6_set = set()
+        self.domain_set = set()
         
-    def scrape_ip_164746_xyz(self, url: str) -> tuple[Set[str], Set[str]]:
-        """爬取第一个网站的IP信息（IPv4和IPv6）"""
-        logger.info(f"开始爬取 {url}")
-        ipv4_set = set()
-        ipv6_set = set()
-        
+    def _fetch_page(self, url: str, **kwargs) -> str:
+        """通用页面获取方法"""
         try:
-            response = self.session.get(url, timeout=10)
+            response = self.session.get(url, timeout=10, **kwargs)
             response.raise_for_status()
-            
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # 方法1: 通过a标签查找
-            ip_links = soup.find_all('a', href=re.compile(r'ipv4/\d+\.\d+\.\d+\.\d+'))
-            for link in ip_links:
-                ip_match = re.search(r'ipv4/(\d+\.\d+\.\d+\.\d+)', link['href'])
-                if ip_match:
-                    ipv4_set.add(ip_match.group(1))
-            
-            # 查找IPv6地址
-            ipv6_links = soup.find_all('a', href=re.compile(r'ipv6/[0-9a-fA-F:]+'))
-            for link in ipv6_links:
-                ipv6_match = re.search(r'ipv6/([0-9a-fA-F:]+)', link['href'])
-                if ipv6_match and self._is_valid_ipv6_format(ipv6_match.group(1)):
-                    ipv6_set.add(ipv6_match.group(1))
-            
-            # 方法2: 通过文本模式查找（备用方法）
-            if not ipv4_set:
-                ipv4_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
-                found_ips = re.findall(ipv4_pattern, response.text)
-                # 过滤掉一些明显不是IP的数字
-                for ip in found_ips:
-                    if self._is_valid_ipv4_format(ip):
-                        ipv4_set.add(ip)
-            
-            # 查找文本中的IPv6地址
-            if not ipv6_set:
-                ipv6_pattern = self._get_ipv6_pattern()
-                found_ipv6s = re.findall(ipv6_pattern, response.text)
-                for ipv6 in found_ipv6s:
-                    if self._is_valid_ipv6_format(ipv6):
-                        ipv6_set.add(ipv6)
-            
-            logger.info(f"从 {url} 爬取到 {len(ipv4_set)} 个IPv4地址和 {len(ipv6_set)} 个IPv6地址")
-            return ipv4_set, ipv6_set
-            
+            return response.text
         except Exception as e:
-            logger.error(f"爬取 {url} 时出错: {e}")
-            return set(), set()
+            logger.error(f"请求 {url} 失败: {e}")
+            return ""
     
-    def scrape_api_uouin(self, url: str) -> tuple[Set[str], Set[str]]:
-        """爬取第二个网站的IP信息（IPv4和IPv6）"""
-        logger.info(f"开始爬取 {url}")
+    def _extract_ips_from_text(self, text: str) -> Tuple[Set[str], Set[str]]:
+        """从文本中提取IPv4和IPv6地址"""
         ipv4_set = set()
         ipv6_set = set()
         
-        try:
-            response = self.session.get(url, timeout=10)
-            response.raise_for_status()
-            
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # 查找包含IP的表格行
-            rows = soup.find_all('tr')
-            for row in rows:
-                tds = row.find_all('td')
-                if len(tds) >= 3:
-                    # 第三个td包含IP地址
-                    ip_candidate = tds[2].get_text(strip=True)
-                    # 检查是否是IPv4
-                    if self._is_valid_ipv4_format(ip_candidate):
-                        ipv4_set.add(ip_candidate)
-                    # 检查是否是IPv6
-                    elif self._is_valid_ipv6_format(ip_candidate):
-                        ipv6_set.add(ip_candidate)
-            
-            # 备用方法：使用正则表达式直接搜索
-            if not ipv4_set and not ipv6_set:
-                # 搜索IPv4
-                ipv4_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
-                found_ips = re.findall(ipv4_pattern, response.text)
-                for ip in found_ips:
-                    if self._is_valid_ipv4_format(ip):
-                        ipv4_set.add(ip)
-                
-                # 搜索IPv6
-                ipv6_pattern = self._get_ipv6_pattern()
-                found_ipv6s = re.findall(ipv6_pattern, response.text)
-                for ipv6 in found_ipv6s:
-                    if self._is_valid_ipv6_format(ipv6):
-                        ipv6_set.add(ipv6)
-            
-            logger.info(f"从 {url} 爬取到 {len(ipv4_set)} 个IPv4地址和 {len(ipv6_set)} 个IPv6地址")
-            return ipv4_set, ipv6_set
-            
-        except Exception as e:
-            logger.error(f"爬取 {url} 时出错: {e}")
-            return set(), set()
-    
-    def scrape_wetest_vip(self, url: str) -> tuple[Set[str], Set[str]]:
-        """爬取第三个网站的IP信息（IPv4和IPv6）"""
-        logger.info(f"开始爬取 {url}")
-        ipv4_set = set()
-        ipv6_set = set()
+        # IPv4正则
+        ipv4_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
+        for ip in re.findall(ipv4_pattern, text):
+            if self._is_valid_ipv4(ip):
+                ipv4_set.add(ip)
         
-        try:
-            response = self.session.get(url, timeout=10)
-            response.raise_for_status()
-            
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # 查找所有tr标签
-            rows = soup.find_all('tr')
-            for row in rows:
-                # 查找具有data-label="优选地址"的td标签
-                ip_tds = row.find_all('td', attrs={'data-label': '优选地址'})
-                for td in ip_tds:
-                    ip_text = td.get_text(strip=True)
-                    # 检查是否是IPv4
-                    if self._is_valid_ipv4_format(ip_text):
-                        ipv4_set.add(ip_text)
-                    # 检查是否是IPv6
-                    elif self._is_valid_ipv6_format(ip_text):
-                        ipv6_set.add(ip_text)
-            
-            # 备用方法
-            if not ipv4_set and not ipv6_set:
-                # 搜索IPv4
-                ipv4_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
-                found_ips = re.findall(ipv4_pattern, response.text)
-                for ip in found_ips:
-                    if self._is_valid_ipv4_format(ip):
-                        ipv4_set.add(ip)
-                
-                # 搜索IPv6
-                ipv6_pattern = self._get_ipv6_pattern()
-                found_ipv6s = re.findall(ipv6_pattern, response.text)
-                for ipv6 in found_ipv6s:
-                    if self._is_valid_ipv6_format(ipv6):
-                        ipv6_set.add(ipv6)
-            
-            logger.info(f"从 {url} 爬取到 {len(ipv4_set)} 个IPv4地址和 {len(ipv6_set)} 个IPv6地址")
-            return ipv4_set, ipv6_set
-            
-        except Exception as e:
-            logger.error(f"爬取 {url} 时出错: {e}")
-            return set(), set()
-    
-    def scrape_hostmonit_api(self, url: str) -> tuple[Set[str], Set[str]]:
-        """爬取hostmonit的API数据（同时获取IPv4和IPv6）"""
-        logger.info(f"开始爬取hostmonit API")
-        ipv4_set = set()
-        ipv6_set = set()
-        
-        try:
-            # 根据您提供的请求头设置
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-                'Content-Type': 'application/json',
-                'Origin': 'https://stock.hostmonit.com',
-                'Referer': 'https://stock.hostmonit.com/',
-                'DNT': '1',
-            }
-            
-            # 获取IPv4地址
-            payload_v4 = {"key": "iDetkOys"}
-            logger.info(f"发送POST请求获取IPv4地址")
-            logger.info(f"请求载荷: {payload_v4}")
-            
-            response_v4 = self.session.post(
-                'https://api.hostmonit.com/get_optimization_ip', 
-                headers=headers, 
-                json=payload_v4, 
-                timeout=20
-            )
-            response_v4.raise_for_status()
-            
-            # 获取IPv6地址
-            payload_v6 = {"key": "iDetkOys", "type": "v6"}
-            logger.info(f"发送POST请求获取IPv6地址")
-            logger.info(f"请求载荷: {payload_v6}")
-            
-            response_v6 = self.session.post(
-                'https://api.hostmonit.com/get_optimization_ip', 
-                headers=headers, 
-                json=payload_v6, 
-                timeout=20
-            )
-            response_v6.raise_for_status()
-            
-            # 解析IPv4响应
-            data_v4 = json.loads(response_v4.text)
-            if data_v4.get('code') == 200:
-                for item in data_v4.get('info', []):
-                    if 'ip' in item and self._is_valid_ipv4_format(item['ip']):
-                        ipv4_set.add(item['ip'])
-                logger.info(f"从hostmonit API成功获取 {len(ipv4_set)} 个IPv4地址")
-            else:
-                logger.error(f"IPv4 API返回错误code: {data_v4.get('code')}")
-                logger.error(f"响应内容: {data_v4}")
-            
-            # 解析IPv6响应
-            data_v6 = json.loads(response_v6.text)
-            if data_v6.get('code') == 200:
-                for item in data_v6.get('info', []):
-                    if 'ip' in item and self._is_valid_ipv6_format(item['ip']):
-                        ipv6_set.add(item['ip'])
-                logger.info(f"从hostmonit API成功获取 {len(ipv6_set)} 个IPv6地址")
-            else:
-                logger.error(f"IPv6 API返回错误code: {data_v6.get('code')}")
-                logger.error(f"响应内容: {data_v6}")
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON解析失败: {e}")
-        except Exception as e:
-            logger.error(f"爬取hostmonit API时出错: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
+        # IPv6正则
+        ipv6_pattern = r'([0-9a-fA-F:]{3,39})'
+        for ip in re.findall(ipv6_pattern, text):
+            if ':' in ip and self._is_valid_ipv6(ip):
+                ipv6_set.add(ip)
         
         return ipv4_set, ipv6_set
     
-    def scrape_cf_090227_xyz(self, url: str) -> tuple[Set[str], Set[str]]:
-        """爬取cf.090227.xyz网站的域名信息"""
-        logger.info(f"开始爬取域名网站 {url}")
-        domains = set()
-        
-        try:
-            response = self.session.get(url, timeout=10)
-            response.raise_for_status()
-            
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # 方法1: 从按钮的onclick属性中提取域名
-            buttons = soup.find_all('button', class_='copy-domain')
-            for button in buttons:
-                onclick_value = button.get('onclick', '')
-                # 匹配copyDomain('域名')格式
-                domain_match = re.search(r"copyDomain\('([^']+)'\)", onclick_value)
-                if domain_match:
-                    domain = domain_match.group(1)
-                    if self.is_valid_domain(domain):
-                        domains.add(domain)
-            
-            # 方法2: 从按钮的文本内容中提取域名
-            if not domains:
-                for button in buttons:
-                    button_text = button.get_text(strip=True)
-                    # 尝试从按钮文本中提取域名
-                    domain_match = re.search(r'([a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z]{2,})+)$', button_text)
-                    if domain_match:
-                        domain = domain_match.group(0)
-                        if self.is_valid_domain(domain):
-                            domains.add(domain)
-            
-            # 方法3: 从所有文本中提取域名
-            if not domains:
-                domain_pattern = r'[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z]{2,})+'
-                found_domains = re.findall(domain_pattern, response.text)
-                for domain_tuple in found_domains:
-                    # 处理匹配结果，获取完整域名
-                    domain_match = re.search(domain_pattern, response.text)
-                    if domain_match:
-                        domain = domain_match.group(0)
-                        if self.is_valid_domain(domain):
-                            domains.add(domain)
-            
-            logger.info(f"从 {url} 爬取到 {len(domains)} 个域名")
-            return set(), domains  # 返回空IPv4集合和域名集合
-            
-        except Exception as e:
-            logger.error(f"爬取域名网站 {url} 时出错: {e}")
+    def scrape_ip_164746_xyz(self, url: str) -> Tuple[Set[str], Set[str]]:
+        """爬取第一个网站的IP信息"""
+        logger.info(f"开始爬取 {url}")
+        text = self._fetch_page(url)
+        if not text:
             return set(), set()
-    
-    def scrape_generic_website(self, url: str) -> tuple[Set[str], Set[str]]:
-        """通用爬取方法，用于未来添加新网站（支持IPv4和IPv6）"""
-        logger.info(f"开始通用爬取 {url}")
-        ipv4_set = set()
-        ipv6_set = set()
         
-        try:
-            response = self.session.get(url, timeout=15)
-            response.raise_for_status()
-            
-            # 首先尝试JSON格式
-            try:
-                data = json.loads(response.text)
-                def find_ips_in_dict(obj, ipv4_set, ipv6_set):
-                    if isinstance(obj, dict):
-                        for key, value in obj.items():
-                            if isinstance(value, str):
-                                if self._is_valid_ipv4_format(value):
-                                    ipv4_set.add(value)
-                                elif self._is_valid_ipv6_format(value):
-                                    ipv6_set.add(value)
-                            else:
-                                find_ips_in_dict(value, ipv4_set, ipv6_set)
-                    elif isinstance(obj, list):
-                        for item in obj:
-                            find_ips_in_dict(item, ipv4_set, ipv6_set)
-                
-                find_ips_in_dict(data, ipv4_set, ipv6_set)
-                if ipv4_set or ipv6_set:
-                    logger.info(f"从 {url} 的JSON中爬取到 {len(ipv4_set)} 个IPv4地址和 {len(ipv6_set)} 个IPv6地址")
-                    return ipv4_set, ipv6_set
-            except:
-                pass
-            
-            # 尝试HTML格式
-            try:
-                soup = BeautifulSoup(response.text, 'html.parser')
-                # 搜索IPv4
-                ipv4_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
-                found_ipv4s = re.findall(ipv4_pattern, response.text)
-                for ip in found_ipv4s:
-                    if self._is_valid_ipv4_format(ip):
-                        ipv4_set.add(ip)
-                
-                # 搜索IPv6
-                ipv6_pattern = self._get_ipv6_pattern()
-                found_ipv6s = re.findall(ipv6_pattern, response.text)
-                for ipv6 in found_ipv6s:
-                    if self._is_valid_ipv6_format(ipv6):
-                        ipv6_set.add(ipv6)
-                
-                if ipv4_set or ipv6_set:
-                    logger.info(f"从 {url} 的HTML中爬取到 {len(ipv4_set)} 个IPv4地址和 {len(ipv6_set)} 个IPv6地址")
-                    return ipv4_set, ipv6_set
-            except:
-                pass
-            
-            # 纯文本搜索
-            ipv4_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
-            found_ipv4s = re.findall(ipv4_pattern, response.text)
-            for ip in found_ipv4s:
-                if self._is_valid_ipv4_format(ip):
+        soup = BeautifulSoup(text, 'html.parser')
+        ipv4_set, ipv6_set = set(), set()
+        
+        # 从链接提取
+        for link in soup.find_all('a', href=True):
+            href = link['href']
+            if 'ipv4' in href:
+                match = re.search(r'ipv4/(\d+\.\d+\.\d+\.\d+)', href)
+                if match and self._is_valid_ipv4(match.group(1)):
+                    ipv4_set.add(match.group(1))
+            elif 'ipv6' in href:
+                match = re.search(r'ipv6/([0-9a-fA-F:]+)', href)
+                if match and self._is_valid_ipv6(match.group(1)):
+                    ipv6_set.add(match.group(1))
+        
+        # 备用方法
+        if not ipv4_set and not ipv6_set:
+            ipv4_set, ipv6_set = self._extract_ips_from_text(text)
+        
+        logger.info(f"从 {url} 爬取到 {len(ipv4_set)} 个IPv4地址和 {len(ipv6_set)} 个IPv6地址")
+        return ipv4_set, ipv6_set
+    
+    def scrape_api_uouin(self, url: str) -> Tuple[Set[str], Set[str]]:
+        """爬取第二个网站的IP信息"""
+        logger.info(f"开始爬取 {url}")
+        text = self._fetch_page(url)
+        if not text:
+            return set(), set()
+        
+        soup = BeautifulSoup(text, 'html.parser')
+        ipv4_set, ipv6_set = set(), set()
+        
+        for row in soup.find_all('tr'):
+            tds = row.find_all('td')
+            if len(tds) >= 3:
+                ip = tds[2].get_text(strip=True)
+                if self._is_valid_ipv4(ip):
                     ipv4_set.add(ip)
-            
-            ipv6_pattern = self._get_ipv6_pattern()
-            found_ipv6s = re.findall(ipv6_pattern, response.text)
-            for ipv6 in found_ipv6s:
-                if self._is_valid_ipv6_format(ipv6):
-                    ipv6_set.add(ipv6)
-            
-            logger.info(f"从 {url} 爬取到 {len(ipv4_set)} 个IPv4地址和 {len(ipv6_set)} 个IPv6地址")
-            return ipv4_set, ipv6_set
-            
-        except Exception as e:
-            logger.error(f"爬取 {url} 时出错: {e}")
-            return set(), set()
-
-    def _get_ipv6_pattern(self) -> str:
-        """获取IPv6正则表达式模式"""
-        # IPv6地址的复杂模式（简化的版本，覆盖大多数情况）
-        return r'(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|' \
-               r'(?:[0-9a-fA-F]{1,4}:){1,7}:|' \
-               r'(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|' \
-               r'(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}|' \
-               r'(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}|' \
-               r'(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}|' \
-               r'(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}|' \
-               r'[0-9a-fA-F]{1,4}:(?:(?::[0-9a-fA-F]{1,4}){1,6})|' \
-               r':(?:(?::[0-9a-fA-F]{1,4}){1,7}|:)|' \
-               r'fe80:(?::[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]+|' \
-               r'::(?:ffff(?::0{1,4})?:)?(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}'
+                elif self._is_valid_ipv6(ip):
+                    ipv6_set.add(ip)
+        
+        # 备用方法
+        if not ipv4_set and not ipv6_set:
+            ipv4_set, ipv6_set = self._extract_ips_from_text(text)
+        
+        logger.info(f"从 {url} 爬取到 {len(ipv4_set)} 个IPv4地址和 {len(ipv6_set)} 个IPv6地址")
+        return ipv4_set, ipv6_set
     
-    def _is_valid_ipv4_format(self, ip: str) -> bool:
-        """验证IPv4地址格式是否有效（不检查是否是域名）"""
-        ip_pattern = r'^\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b$'
-        if not re.match(ip_pattern, ip):
+    def scrape_wetest_vip(self, url: str) -> Tuple[Set[str], Set[str]]:
+        """爬取第三个网站的IP信息"""
+        logger.info(f"开始爬取 {url}")
+        text = self._fetch_page(url)
+        if not text:
+            return set(), set()
+        
+        soup = BeautifulSoup(text, 'html.parser')
+        ipv4_set, ipv6_set = set(), set()
+        
+        for td in soup.find_all('td', attrs={'data-label': '优选地址'}):
+            ip = td.get_text(strip=True)
+            if self._is_valid_ipv4(ip):
+                ipv4_set.add(ip)
+            elif self._is_valid_ipv6(ip):
+                ipv6_set.add(ip)
+        
+        # 备用方法
+        if not ipv4_set and not ipv6_set:
+            ipv4_set, ipv6_set = self._extract_ips_from_text(text)
+        
+        logger.info(f"从 {url} 爬取到 {len(ipv4_set)} 个IPv4地址和 {len(ipv6_set)} 个IPv6地址")
+        return ipv4_set, ipv6_set
+    
+    def scrape_hostmonit_api(self, url: str) -> Tuple[Set[str], Set[str]]:
+        """爬取hostmonit的API数据"""
+        logger.info(f"开始爬取hostmonit API")
+        ipv4_set, ipv6_set = set(), set()
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Content-Type': 'application/json',
+            'Referer': 'https://stock.hostmonit.com/',
+        }
+        
+        try:
+            # IPv4
+            response_v4 = self.session.post(
+                'https://api.hostmonit.com/get_optimization_ip',
+                headers=headers,
+                json={"key": "iDetkOys"},
+                timeout=10
+            )
+            data_v4 = response_v4.json()
+            if data_v4.get('code') == 200:
+                for item in data_v4.get('info', []):
+                    if 'ip' in item and self._is_valid_ipv4(item['ip']):
+                        ipv4_set.add(item['ip'])
+            
+            # IPv6
+            response_v6 = self.session.post(
+                'https://api.hostmonit.com/get_optimization_ip',
+                headers=headers,
+                json={"key": "iDetkOys", "type": "v6"},
+                timeout=10
+            )
+            data_v6 = response_v6.json()
+            if data_v6.get('code') == 200:
+                for item in data_v6.get('info', []):
+                    if 'ip' in item and self._is_valid_ipv6(item['ip']):
+                        ipv6_set.add(item['ip'])
+            
+            logger.info(f"从hostmonit API获取到 {len(ipv4_set)} 个IPv4地址和 {len(ipv6_set)} 个IPv6地址")
+        except Exception as e:
+            logger.error(f"爬取hostmonit API失败: {e}")
+        
+        return ipv4_set, ipv6_set
+    
+    def scrape_cf_090227_xyz(self, url: str) -> Tuple[Set[str], Set[str]]:
+        """爬取域名信息"""
+        logger.info(f"开始爬取域名网站 {url}")
+        text = self._fetch_page(url)
+        if not text:
+            return set(), set()
+        
+        domains = set()
+        soup = BeautifulSoup(text, 'html.parser')
+        
+        # 从按钮提取
+        for button in soup.find_all('button', class_='copy-domain'):
+            onclick = button.get('onclick', '')
+            match = re.search(r"copyDomain\('([^']+)'\)", onclick)
+            if match:
+                domain = match.group(1)
+                if '.' in domain and len(domain) > 3:
+                    domains.add(domain)
+        
+        # 从文本提取
+        if not domains:
+            domain_pattern = r'[a-zA-Z0-9][a-zA-Z0-9-]*\.[a-zA-Z]{2,}'
+            for domain in re.findall(domain_pattern, text):
+                if '.' in domain and len(domain) > 3:
+                    domains.add(domain)
+        
+        logger.info(f"从 {url} 爬取到 {len(domains)} 个域名")
+        return set(), domains  # 返回空IPv4集合和域名集合
+    
+    def scrape_generic_website(self, url: str) -> Tuple[Set[str], Set[str]]:
+        """通用爬取方法"""
+        logger.info(f"开始通用爬取 {url}")
+        text = self._fetch_page(url)
+        if not text:
+            return set(), set()
+        
+        # 先尝试解析JSON
+        try:
+            data = json.loads(text)
+            ipv4_set, ipv6_set = set(), set()
+            def extract_from_obj(obj):
+                if isinstance(obj, dict):
+                    for v in obj.values():
+                        if isinstance(v, str):
+                            if self._is_valid_ipv4(v):
+                                ipv4_set.add(v)
+                            elif self._is_valid_ipv6(v):
+                                ipv6_set.add(v)
+                        else:
+                            extract_from_obj(v)
+                elif isinstance(obj, list):
+                    for item in obj:
+                        extract_from_obj(item)
+            
+            extract_from_obj(data)
+            if ipv4_set or ipv6_set:
+                return ipv4_set, ipv6_set
+        except:
+            pass
+        
+        # 普通HTML/文本提取
+        return self._extract_ips_from_text(text)
+    
+    def _is_valid_ipv4(self, ip: str) -> bool:
+        """验证IPv4地址"""
+        pattern = r'^\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b$'
+        if not re.match(pattern, ip):
             return False
         
         parts = ip.split('.')
         if len(parts) != 4:
             return False
-            
+        
         for part in parts:
             try:
                 num = int(part)
                 if num < 0 or num > 255:
                     return False
-            except ValueError:
+            except:
                 return False
         
-        # 排除内网和特殊IP
-        if ip.startswith('0.') or ip.startswith('10.') or ip.startswith('127.') or \
-           ip.startswith('169.254.') or ip.startswith('172.16.') or \
-           ip.startswith('192.168.') or ip.startswith('224.') or \
-           ip.startswith('240.') or ip.startswith('255.'):
+        # 排除内网地址
+        if ip.startswith(('0.', '10.', '127.', '169.254.', '192.168.', '172.16.', '172.17.', '172.18.', '172.19.',
+                         '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.', '172.26.', '172.27.',
+                         '172.28.', '172.29.', '172.30.', '172.31.', '224.', '240.', '255.')):
             return False
-            
+        
         return True
     
-    def is_valid_ipv4(self, ip: str) -> bool:
-        """公开的IPv4验证方法，排除域名"""
-        # 首先检查是否是域名
-        if self.is_valid_domain(ip):
-            return False
-        return self._is_valid_ipv4_format(ip)
-    
-    def _is_valid_ipv6_format(self, ipv6: str) -> bool:
-        """验证IPv6地址格式是否有效（不检查是否是域名）"""
-        # 首先用正则表达式进行基本验证
-        ipv6_pattern = self._get_ipv6_pattern()
-        if not re.fullmatch(ipv6_pattern, ipv6):
+    def _is_valid_ipv6(self, ipv6: str) -> bool:
+        """验证IPv6地址"""
+        if ':' not in ipv6 or len(ipv6) < 3:
             return False
         
-        # 进一步验证（简化验证）
+        # 简化验证：包含冒号且符合基本格式
         parts = ipv6.split(':')
+        if len(parts) > 8 or ipv6.count('::') > 1:
+            return False
         
-        # 处理双冒号情况
-        if '::' in ipv6:
-            if ipv6.count('::') > 1:
-                return False
-            # 双冒号可以表示多个0段
-        
-        # 检查每个段的长度和内容
         for part in parts:
             if not part:
-                continue  # 空段可能是双冒号的一部分
+                continue
             if len(part) > 4:
                 return False
             try:
                 int(part, 16)
-            except ValueError:
+            except:
                 return False
         
         return True
     
-    def is_valid_ipv6(self, ipv6: str) -> bool:
-        """公开的IPv6验证方法，排除域名"""
-        # 首先检查是否是域名
-        if self.is_valid_domain(ipv6):
-            return False
-        return self._is_valid_ipv6_format(ipv6)
-    
-    def is_valid_domain(self, domain: str) -> bool:
-        """验证域名是否有效"""
-        # 检查是否是IPv4地址
-        if self._is_valid_ipv4_format(domain):
-            return False
+    def _save_to_file(self, items: Set[str], filename: str, desc: str):
+        """保存数据到文件"""
+        if not items:
+            return
         
-        # 检查是否是IPv6地址
-        ipv6_pattern = self._get_ipv6_pattern()
-        if re.fullmatch(ipv6_pattern, domain):
-            return False
-            
-        # 基本的域名验证规则
-        domain_pattern = r'^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z]{2,})+$'
-        
-        if not re.match(domain_pattern, domain):
-            return False
-        
-        # 排除常见的一些非域名字符串
-        excluded_patterns = [
-            r'\.com$',  # 需要更具体的域名，不是顶级域名本身
-            r'\.net$',
-            r'\.org$',
-            r'\.gov$',
-            r'\.edu$',
-            r'example\.com$',
-            r'test\.com$',
-            r'localhost$'
-        ]
-        
-        for pattern in excluded_patterns:
-            if re.search(pattern, domain, re.IGNORECASE):
-                # 检查是否只是顶级域名本身（没有子域名）
-                if domain.count('.') == 1:
-                    return False
-        
-        # 域名长度检查
-        if len(domain) < 4 or len(domain) > 253:
-            return False
-        
-        # 确保域名包含至少一个点
-        if '.' not in domain:
-            return False
-        
-        return True
-    
-    def save_to_files(self, ipv4_filename: str = 'ipv4.txt', ipv6_filename: str = 'ipv6.txt', domain_filename: str = 'domain.txt'):
-        """将IPv4、IPv6地址和域名分别保存到文件"""
-        logger.info(f"开始保存IP和域名到文件")
-        
-        # 保存IPv4地址
-        if self.ipv4_set:
-            sorted_ipv4 = sorted(list(self.ipv4_set))
-            with open(ipv4_filename, 'w', encoding='utf-8') as f:
-                for ip in sorted_ipv4:
-                    f.write(f"{ip}\n")
-            logger.info(f"共保存 {len(sorted_ipv4)} 个IPv4地址到 {ipv4_filename}")
-        
-        # 保存IPv6地址
-        if self.ipv6_set:
-            sorted_ipv6 = sorted(list(self.ipv6_set))
-            with open(ipv6_filename, 'w', encoding='utf-8') as f:
-                for ip in sorted_ipv6:
-                    f.write(f"{ip}\n")
-            logger.info(f"共保存 {len(sorted_ipv6)} 个IPv6地址到 {ipv6_filename}")
-        
-        # 保存域名
-        if self.domain_set:
-            sorted_domains = sorted(list(self.domain_set))
-            with open(domain_filename, 'w', encoding='utf-8') as f:
-                for domain in sorted_domains:
-                    f.write(f"{domain}\n")
-            logger.info(f"共保存 {len(sorted_domains)} 个域名到 {domain_filename}")
-    
-    def save_combined_to_file(self, filename: str = 'ip.txt'):
-        """将IPv4、IPv6地址和域名合并保存到一个文件"""
-        logger.info(f"开始保存所有IP和域名到文件 {filename}")
-        
-        # 合并所有项目
-        all_items = []
-        
-        # 先添加IPv4地址
-        if self.ipv4_set:
-            all_items.extend(sorted(list(self.ipv4_set)))
-        
-        # 再添加IPv6地址
-        if self.ipv6_set:
-            all_items.extend(sorted(list(self.ipv6_set)))
-        
-        # 最后添加域名
-        if self.domain_set:
-            sorted_domains = sorted(list(self.domain_set))
-            all_items.extend(sorted_domains)
-        
+        sorted_items = sorted(items)
         with open(filename, 'w', encoding='utf-8') as f:
-            for item in all_items:
+            for item in sorted_items:
                 f.write(f"{item}\n")
-        
-        logger.info(f"共保存 {len(all_items)} 个条目到 {filename}")
-        logger.info(f"其中包含 {len(self.ipv4_set)} 个IPv4地址, {len(self.ipv6_set)} 个IPv6地址, {len(self.domain_set)} 个域名")
+        logger.info(f"保存 {len(sorted_items)} 个{desc}到 {filename}")
     
     def run(self, urls: list = None):
         """主运行函数"""
@@ -568,135 +306,78 @@ class IPScraper:
                 'https://api.uouin.com/cloudflare.html',
                 'https://www.wetest.vip/page/cloudflare/address_v4.html',
                 'https://www.wetest.vip/page/cloudflare/address_v6.html',
-                'https://stock.hostmonit.com/CloudFlareYes',
-                'https://stock.hostmonit.com/CloudFlareYesV6',
-                'https://cf.090227.xyz/'  # 新增的域名网站
+                'https://stock.hostmonit.com',
+                'https://cf.090227.xyz/'
             ]
-        logger.info(f"开始爬取 {len(urls)} 个网站")
         
-        # 定义网站与爬取方法的映射
-        website_handlers = {
+        # 网站处理映射
+        handlers = {
             'ip.164746.xyz': self.scrape_ip_164746_xyz,
             'api.uouin.com': self.scrape_api_uouin,
             'www.wetest.vip': self.scrape_wetest_vip,
-            'stock.hostmonit.com': self.scrape_hostmonit_api,  # 同时处理IPv4和IPv6
-            'cf.090227.xyz': self.scrape_cf_090227_xyz  # 新增域名网站处理器
+            'stock.hostmonit.com': self.scrape_hostmonit_api,
+            'cf.090227.xyz': self.scrape_cf_090227_xyz
         }
         
         for url in urls:
-            logger.info(f"正在处理: {url}")
+            logger.info(f"处理: {url}")
             
-            # 确定使用哪个爬取方法
+            # 选择处理器
             handler = None
-            for domain, method in website_handlers.items():
+            for domain, method in handlers.items():
                 if domain in url:
                     handler = method
                     break
-            
             if handler is None:
                 handler = self.scrape_generic_website
             
-            # 爬取数据
+            # 执行爬取
             ipv4_items, ipv6_items = handler(url)
             
-            # 对于域名网站，特殊处理
+            # 处理结果
             if 'cf.090227.xyz' in url:
-                # 从域名网站返回的第二个集合是域名
-                domains = ipv6_items
-                if domains:
-                    before_count = len(self.domain_set)
-                    self.domain_set.update(domains)
-                    added_count = len(self.domain_set) - before_count
-                    logger.info(f"从 {url} 添加了 {added_count} 个新域名")
+                self.domain_set.update(ipv6_items)  # ipv6_items实际是域名集合
             else:
-                # 添加到对应的集合
                 if ipv4_items:
-                    before_count = len(self.ipv4_set)
-                    # 过滤掉可能的域名
-                    valid_ips = [ip for ip in ipv4_items if self.is_valid_ipv4(ip)]
-                    self.ipv4_set.update(valid_ips)
-                    added_count = len(self.ipv4_set) - before_count
-                    logger.info(f"从 {url} 添加了 {added_count} 个新IPv4地址")
-                
+                    self.ipv4_set.update(ip for ip in ipv4_items if self._is_valid_ipv4(ip))
                 if ipv6_items:
-                    before_count = len(self.ipv6_set)
-                    # 过滤掉可能的域名
-                    valid_ipv6s = [ip for ip in ipv6_items if self.is_valid_ipv6(ip)]
-                    self.ipv6_set.update(valid_ipv6s)
-                    added_count = len(self.ipv6_set) - before_count
-                    logger.info(f"从 {url} 添加了 {added_count} 个新IPv6地址")
+                    self.ipv6_set.update(ip for ip in ipv6_items if self._is_valid_ipv6(ip))
             
-            # 添加延迟避免被屏蔽
-            time.sleep(1)
+            time.sleep(0.5)  # 降低延迟
         
-        # 保存到文件
-        self.save_combined_to_file('ip.txt')
-        self.save_to_files()
-        # 打印统计信息
-        logger.info("=" * 50)
-        logger.info(f"爬取完成！总共收集到:")
-        logger.info(f"  - {len(self.ipv4_set)} 个唯一IPv4地址")
-        logger.info(f"  - {len(self.ipv6_set)} 个唯一IPv6地址")
-        logger.info(f"  - {len(self.domain_set)} 个唯一域名")
+        # 保存文件
+        self._save_to_file(self.ipv4_set, 'ipv4.txt', 'IPv4地址')
+        self._save_to_file(self.ipv6_set, 'ipv6.txt', 'IPv6地址')
+        self._save_to_file(self.domain_set, 'domain.txt', '域名')
         
-        # 显示前5个IPv4作为示例
-        if self.ipv4_set:
-            logger.info("示例IPv4地址:")
-            for i, ip in enumerate(sorted(self.ipv4_set)[:5]):
-                logger.info(f"  {i+1}. {ip}")
-            if len(self.ipv4_set) > 5:
-                logger.info(f"  ... 还有 {len(self.ipv4_set) - 5} 个IPv4地址")
+        # 合并保存
+        all_items = sorted(self.ipv4_set) + sorted(self.ipv6_set) + sorted(self.domain_set)
+        with open('ip.txt', 'w', encoding='utf-8') as f:
+            for item in all_items:
+                f.write(f"{item}\n")
         
-        # 显示前5个IPv6作为示例
-        if self.ipv6_set:
-            logger.info("示例IPv6地址:")
-            for i, ip in enumerate(sorted(self.ipv6_set)[:5]):
-                logger.info(f"  {i+1}. {ip}")
-            if len(self.ipv6_set) > 5:
-                logger.info(f"  ... 还有 {len(self.ipv6_set) - 5} 个IPv6地址")
-        
-        # 显示前5个域名作为示例
-        if self.domain_set:
-            logger.info("示例域名:")
-            for i, domain in enumerate(sorted(self.domain_set)[:5]):
-                logger.info(f"  {i+1}. {domain}")
-            if len(self.domain_set) > 5:
-                logger.info(f"  ... 还有 {len(self.domain_set) - 5} 个域名")
+        # 输出统计
+        logger.info("=" * 40)
+        logger.info(f"总计: {len(self.ipv4_set)} IPv4, {len(self.ipv6_set)} IPv6, {len(self.domain_set)} 域名")
 
 
 def main():
     """主函数"""
-    logger.info("=" * 50)
-    logger.info("IP和域名爬虫脚本启动")
-    logger.info("=" * 50)
+    logger.info("IP和域名爬虫启动")
     
-    # 创建爬虫实例
     scraper = IPScraper()
-    
-    # 定义要爬取的网站列表（可以在此添加新网站）
-    urls_to_scrape = [
+    urls = [
         'https://ip.164746.xyz',
         'https://api.uouin.com/cloudflare.html',
         'https://www.wetest.vip/page/cloudflare/address_v4.html',
         'https://www.wetest.vip/page/cloudflare/address_v6.html',
         'https://stock.hostmonit.com',
-        'https://cf.090227.xyz/'  # 新增的域名网站
+        'https://cf.090227.xyz/'
     ]
     
-    # 运行爬虫
-    scraper.run(urls_to_scrape)
-    
-    logger.info("脚本执行完成，自动退出")
+    scraper.run(urls)
+    logger.info("执行完成")
 
 
 if __name__ == "__main__":
-    # 安装依赖的提示
-    try:
-        import requests
-        from bs4 import BeautifulSoup
-    except ImportError:
-        print("缺少必要的依赖库，请运行以下命令安装：")
-        print("pip install requests beautifulsoup4")
-        exit(1)
-    
     main()
