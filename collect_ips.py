@@ -38,16 +38,33 @@ class IPScraper:
         ipv4_set = set()
         ipv6_set = set()
         
-        # IPv4正则
-        ipv4_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
+        # IPv4正则 - 更严格的匹配
+        ipv4_pattern = r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b'
         for ip in re.findall(ipv4_pattern, text):
             if self._is_valid_ipv4(ip):
                 ipv4_set.add(ip)
         
-        # IPv6正则
-        ipv6_pattern = r'([0-9a-fA-F:]{3,39})'
-        for ip in re.findall(ipv6_pattern, text):
-            if ':' in ip and self._is_valid_ipv6(ip):
+        # IPv6正则 - 更严格的匹配，排除时间格式
+        # 匹配标准的IPv6地址格式
+        ipv6_pattern = r'\b(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}\b|\b(?:[A-Fa-f0-9]{1,4}:){1,7}:\b|\b:(?:[A-Fa-f0-9]{1,4}:){1,7}[A-Fa-f0-9]{1,4}\b|\b(?:[A-Fa-f0-9]{1,4}:){1,6}:[A-Fa-f0-9]{1,4}\b'
+        
+        # 先匹配所有可能的IPv6模式
+        potential_ipv6 = re.findall(ipv6_pattern, text)
+        
+        # 过滤掉时间格式和其他无效格式
+        for ip in potential_ipv6:
+            ip = ip.strip()
+            # 排除时间格式 (HH:MM:SS)
+            if re.match(r'^\d{1,2}:\d{2}:\d{2}$', ip):
+                continue
+            # 排除只有冒号的情况
+            if ip == ':' or ip == '::':
+                continue
+            # 排除部分时间格式 (如 01:32)
+            if re.match(r'^\d{1,2}:\d{2}$', ip) and len(ip) <= 5:
+                continue
+                
+            if self._is_valid_ipv6(ip):
                 ipv6_set.add(ip)
         
         return ipv4_set, ipv6_set
@@ -241,7 +258,7 @@ class IPScraper:
     
     def _is_valid_ipv4(self, ip: str) -> bool:
         """验证IPv4地址"""
-        pattern = r'^\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b$'
+        pattern = r'^\b(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b$'
         if not re.match(pattern, ip):
             return False
         
@@ -267,14 +284,22 @@ class IPScraper:
     
     def _is_valid_ipv6(self, ipv6: str) -> bool:
         """验证IPv6地址"""
+        # 首先排除时间格式
+        if re.match(r'^\d{1,2}:\d{2}:\d{2}$', ipv6):
+            return False
+        if re.match(r'^\d{1,2}:\d{2}$', ipv6) and len(ipv6) <= 5:
+            return False
+            
+        # 简化验证
         if ':' not in ipv6 or len(ipv6) < 3:
             return False
         
-        # 简化验证：包含冒号且符合基本格式
+        # 检查基本格式
         parts = ipv6.split(':')
         if len(parts) > 8 or ipv6.count('::') > 1:
             return False
         
+        # 检查每个部分是否为有效的十六进制
         for part in parts:
             if not part:
                 continue
@@ -284,6 +309,16 @@ class IPScraper:
                 int(part, 16)
             except:
                 return False
+        
+        # 进一步验证：确保至少有2个冒号（标准IPv6格式）
+        if ipv6.count(':') < 2:
+            return False
+            
+        # 排除一些常见错误格式
+        if ipv6.startswith(':') and not ipv6.startswith('::'):
+            return False
+        if ipv6.endswith(':') and not ipv6.endswith('::'):
+            return False
         
         return True
     
