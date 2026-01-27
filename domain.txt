@@ -1,3 +1,6 @@
+bestcf.030101.xyz
+cf.877774.xyz
+cf.cloudflare.182682.xyz
 cf.tencentapp.cn
 cloudflare-dl.byoip.top
 mfa.gov.ua
@@ -6,3 +9,4 @@ staticdelivery.nexusmods.com
 store.ubi.com
 www.shopify.com
 www.visa.cn
+youxuan.cf.090227.xyz
